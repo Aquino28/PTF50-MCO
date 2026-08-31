@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>CCS Lab Equipment Watch</title>
+</head>
+<body>
+
+  <h1>CCS Lab Equipment Watch</h1>
+  <p id="status">Loading model...</p>
+
+  <!-- Mode selection -->
+  <button id="uploadModeBtn">Upload Photo</button>
+  <button id="webcamModeBtn">Use Webcam</button>
+
+  <!-- Upload mode controls (hidden until chosen) -->
+  <div id="uploadControls" style="display:none;">
+    <input type="file" id="fileInput" accept="image/*">
+  </div>
+
+  <!-- Webcam mode controls (hidden until chosen) -->
+  <div id="webcamControls" style="display:none;">
+    <button id="startWebcamBtn">Start Webcam</button>
+  </div>
+
+  <!-- One shared display area. Only one of img/video is visible at a time,
+       the canvas always sits on top of whichever is active. -->
+  <div id="stageWrapper" style="position: relative; display: inline-block;">
+    <img id="labPhoto" style="display:none; max-width: 640px;">
+    <video id="webcamFeed" style="display:none; max-width: 640px;" autoplay muted playsinline></video>
+    <canvas id="overlay" style="position:absolute; top:0; left:0;"></canvas>
+  </div>
+
+  <ul id="results"></ul>
+
+  <!-- Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+  <!-- Our own logic, kept separate -->
+  <script src="app.js"></script>
+
+</body>
+</html>
