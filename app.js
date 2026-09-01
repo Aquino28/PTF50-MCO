@@ -9,18 +9,24 @@ const uploadControls = document.getElementById("uploadControls");
 const webcamControls = document.getElementById("webcamControls");
 const fileInput = document.getElementById("fileInput");
 const startWebcamBtn = document.getElementById("startWebcamBtn");
+const stopWebcamBtn = document.getElementById("stopWebcamBtn");
 
 const imgEl = document.getElementById("labPhoto");
 const videoEl = document.getElementById("webcamFeed");
 const canvas = document.getElementById("overlay");
 const ctx = canvas.getContext("2d");
+const stageWrapper = document.getElementById("stageWrapper");
 
-// The items we're treating as "school equipment" — see the limitation
+// The items we're treating as "school/lab equipment" — see the limitation
 // discussion: COCO-SSD only knows these 80 classes, nothing more specific
-// like "pen" or "pencil case" exists in its vocabulary.
+// like "pen" or "flash drive" exists in its vocabulary. Picked the classes
+// that plausibly show up as CCS lab equipment: "tv" doubles as a monitor,
+// "remote" for lab TVs/projectors, plus the usual laptop/keyboard/mouse/
+// backpack/book/phone/scissors/cup/bottle items.
 const WATCHED_ITEMS = [
   "backpack", "book", "laptop", "cell phone",
-  "keyboard", "mouse", "scissors", "cup", "bottle"
+  "keyboard", "mouse", "remote", "tv",
+  "scissors", "cup", "bottle"
 ];
 
 let model = null;
@@ -42,6 +48,8 @@ init();
 
 uploadModeBtn.addEventListener("click", function () {
   stopWebcamIfRunning();
+  uploadModeBtn.classList.add("is-active");
+  webcamModeBtn.classList.remove("is-active");
   uploadControls.style.display = "block";
   webcamControls.style.display = "none";
   videoEl.style.display = "none";
@@ -49,8 +57,12 @@ uploadModeBtn.addEventListener("click", function () {
 });
 
 webcamModeBtn.addEventListener("click", function () {
+  webcamModeBtn.classList.add("is-active");
+  uploadModeBtn.classList.remove("is-active");
   uploadControls.style.display = "none";
   webcamControls.style.display = "block";
+  startWebcamBtn.style.display = "inline-block";
+  stopWebcamBtn.style.display = "none";
   imgEl.style.display = "none";
 });
 
@@ -84,6 +96,9 @@ startWebcamBtn.addEventListener("click", async function () {
   videoEl.srcObject = stream;
   videoEl.style.display = "block";
   imgEl.style.display = "none";
+  startWebcamBtn.style.display = "none";
+  stopWebcamBtn.style.display = "inline-block";
+  stageWrapper.classList.add("is-live");
 
   videoEl.onloadeddata = function () {
     webcamLoopRunning = true;
@@ -91,8 +106,22 @@ startWebcamBtn.addEventListener("click", async function () {
   };
 });
 
+stopWebcamBtn.addEventListener("click", function () {
+  stopWebcamIfRunning();
+  startWebcamBtn.style.display = "inline-block";
+  stopWebcamBtn.style.display = "none";
+
+  // Clear the last frame's overlay/results so a stale detection
+  // doesn't stay on screen after the feed is gone.
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  resultsList.innerHTML = "";
+  statusEl.innerText = "Webcam stopped.";
+  statusEl.classList.remove("status-line--ok", "status-line--alert");
+});
+
 function stopWebcamIfRunning() {
   webcamLoopRunning = false;
+  stageWrapper.classList.remove("is-live");
   if (videoEl.srcObject) {
     videoEl.srcObject.getTracks().forEach(function (track) { track.stop(); });
     videoEl.srcObject = null;
@@ -138,25 +167,29 @@ function renderPredictions(predictions, sourceElement) {
     const isWatchedItem = WATCHED_ITEMS.includes(item.class);
     const isLeftBehind = isWatchedItem && !personPresent;
 
-    // Green box for normal detections, red box for a flagged left-behind item.
-    ctx.strokeStyle = isLeftBehind ? "#FF0000" : "#00FF00";
+    // Cyan-ish "ok" box for normal detections, alert-red box for a flagged item —
+    // same palette as the rest of the UI (see style.css --ok / --alert).
+    ctx.strokeStyle = isLeftBehind ? "#ff5d4b" : "#45d483";
     ctx.lineWidth = 3;
     ctx.strokeRect(x, y, width, height);
 
     const label = item.class + " " + Math.round(item.score * 100) + "%" + (isLeftBehind ? " — LEFT BEHIND?" : "");
-    ctx.font = "16px Arial";
+    ctx.font = "14px 'JetBrains Mono', monospace";
     const textWidth = ctx.measureText(label).width;
-    ctx.fillStyle = isLeftBehind ? "#FF0000" : "#00FF00";
+    ctx.fillStyle = isLeftBehind ? "#ff5d4b" : "#45d483";
     ctx.fillRect(x, y - 20, textWidth + 8, 20);
-    ctx.fillStyle = "#000000";
+    ctx.fillStyle = "#0a1316";
     ctx.fillText(label, x + 4, y - 5);
 
     const li = document.createElement("li");
-    li.innerText = label;
+    li.className = "log-item" + (isLeftBehind ? " log-item--alert" : "");
+    li.innerHTML = '<span class="log-dot"></span><span>' + label + '</span>';
     resultsList.appendChild(li);
   });
 
   statusEl.innerText = personPresent
     ? "Person present in frame."
     : "No person detected — any watched item above is flagged as possibly left behind.";
+  statusEl.classList.toggle("status-line--ok", personPresent);
+  statusEl.classList.toggle("status-line--alert", !personPresent);
 }

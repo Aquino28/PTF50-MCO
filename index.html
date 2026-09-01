@@ -2,36 +2,58 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CCS Lab Equipment Watch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-  <h1>CCS Lab Equipment Watch</h1>
-  <p id="status">Loading model...</p>
+  <header class="topbar">
+    <h1 class="wordmark">CCS Lab<br>Watch</h1>
+    <p id="status" class="status-line">Loading model…</p>
+  </header>
 
   <!-- Mode selection -->
-  <button id="uploadModeBtn">Upload Photo</button>
-  <button id="webcamModeBtn">Use Webcam</button>
+  <div class="mode-switch">
+    <button id="uploadModeBtn" class="mode-btn is-active">Upload Photo</button>
+    <button id="webcamModeBtn" class="mode-btn">Use Webcam</button>
+  </div>
 
   <!-- Upload mode controls (hidden until chosen) -->
-  <div id="uploadControls" style="display:none;">
-    <input type="file" id="fileInput" accept="image/*">
+  <div id="uploadControls" class="controls" style="display:none;">
+    <label class="file-btn">
+      Choose photo
+      <input type="file" id="fileInput" accept="image/*">
+    </label>
   </div>
 
   <!-- Webcam mode controls (hidden until chosen) -->
-  <div id="webcamControls" style="display:none;">
-    <button id="startWebcamBtn">Start Webcam</button>
+  <div id="webcamControls" class="controls" style="display:none;">
+    <button id="startWebcamBtn" class="action-btn">Start Webcam</button>
+    <button id="stopWebcamBtn" class="action-btn action-btn--stop" style="display:none;">Stop Webcam</button>
   </div>
 
-  <!-- One shared display area. Only one of img/video is visible at a time,
-       the canvas always sits on top of whichever is active. -->
-  <div id="stageWrapper" style="position: relative; display: inline-block;">
-    <img id="labPhoto" style="display:none; max-width: 640px;">
-    <video id="webcamFeed" style="display:none; max-width: 640px;" autoplay muted playsinline></video>
-    <canvas id="overlay" style="position:absolute; top:0; left:0;"></canvas>
-  </div>
+  <main class="console">
+    <!-- One shared display area. Only one of img/video is visible at a time,
+         the canvas always sits on top of whichever is active. -->
+    <div id="stageWrapper" class="stage">
+      <span class="bracket bracket--tl"></span>
+      <span class="bracket bracket--tr"></span>
+      <span class="bracket bracket--bl"></span>
+      <span class="bracket bracket--br"></span>
+      <img id="labPhoto" class="stage-media">
+      <video id="webcamFeed" class="stage-media" autoplay muted playsinline></video>
+      <canvas id="overlay" class="stage-overlay"></canvas>
+    </div>
 
-  <ul id="results"></ul>
+    <aside class="log">
+      <h2 class="log-title">Detections</h2>
+      <ul id="results" class="log-list"></ul>
+    </aside>
+  </main>
 
   <!-- Libraries -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>

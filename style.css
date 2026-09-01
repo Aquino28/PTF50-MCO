@@ -1,0 +1,298 @@
+/* ============================================================
+   CCS Lab Equipment Watch — pastel monitoring console
+   Same "viewfinder scanning the room" concept as before, now
+   in a light pastel palette (pink + lavender) instead of a
+   dark control-room theme. Green/red stay put for the actual
+   clear/flagged status — that signal needs to read as a real
+   warning, not blend into the pastel decoration.
+   ============================================================ */
+
+:root {
+  --bg: #faf3f8;
+  --panel: #ffffff;
+  --line: #ecdcec;
+  --text: #3c2f43;
+  --muted: #8d7a95;
+
+  --ok: #3fa876;
+  --alert: #e2483f;
+  --scan: #f599c6;
+  --accent2: #c5b3d3;
+
+  --font-display: "Archivo", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 32px 20px 64px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* ---------- header ---------- */
+
+.topbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 920px;
+  margin: 0 auto 28px;
+  padding-bottom: 20px;
+  border-bottom: 2px solid var(--accent2);
+}
+
+.wordmark {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 28px;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.status-line {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.status-line--ok { color: var(--ok); }
+.status-line--alert { color: var(--alert); }
+
+/* ---------- mode switch ---------- */
+
+.mode-switch {
+  display: flex;               /* was inline-flex — that's why it wasn't centering */
+  width: fit-content;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.mode-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 9px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.mode-btn.is-active {
+  background: var(--scan);
+  color: #fff;
+}
+
+.mode-btn:not(.is-active):hover {
+  color: var(--text);
+  background: var(--bg);
+}
+
+.mode-btn:focus-visible,
+.action-btn:focus-visible,
+.file-btn:focus-visible-within {
+  outline: 2px solid var(--scan);
+  outline-offset: 2px;
+}
+
+/* ---------- controls row (upload / webcam) ---------- */
+
+.controls {
+  max-width: 920px;
+  margin: 14px auto 0;
+}
+
+.file-btn,
+.action-btn {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 9px 16px;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.file-btn:hover,
+.action-btn:hover {
+  border-color: var(--scan);
+  background: #fdf0f6;
+}
+
+.file-btn input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.action-btn--stop {
+  border-color: var(--alert);
+  color: var(--alert);
+}
+
+.action-btn--stop:hover {
+  background: var(--alert);
+  color: #fff;
+}
+
+/* ---------- console: stage + log side by side ---------- */
+
+.console {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 20px;
+  max-width: 920px;
+  margin: 24px auto 0;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .console { grid-template-columns: 1fr; }
+}
+
+/* ---------- stage: the viewfinder ---------- */
+
+.stage {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  min-height: 220px;
+  overflow: hidden;
+  box-shadow: 0 1px 0 rgba(197, 179, 211, 0.25);
+}
+
+.stage-media {
+  display: none;
+  width: 100%;
+  height: auto;
+  vertical-align: top;
+}
+
+.stage-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* corner brackets — the viewfinder/scanner signature */
+.bracket {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--scan);
+  opacity: 0.8;
+  z-index: 2;
+  pointer-events: none;
+}
+.bracket--tl { top: 10px; left: 10px; border-right: none; border-bottom: none; }
+.bracket--tr { top: 10px; right: 10px; border-left: none; border-bottom: none; }
+.bracket--bl { bottom: 10px; left: 10px; border-right: none; border-top: none; }
+.bracket--br { bottom: 10px; right: 10px; border-left: none; border-top: none; }
+
+/* single deliberate motion moment: a scan line sweeps while
+   the webcam is actively live — not on every interaction */
+.stage.is-live::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent2), transparent);
+  z-index: 3;
+  animation: scan-sweep 2.6s linear infinite;
+}
+
+@keyframes scan-sweep {
+  0%   { top: 0%; }
+  100% { top: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage.is-live::after { animation: none; display: none; }
+}
+
+/* ---------- log: detection readout ---------- */
+
+.log {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 14px 6px;
+  min-height: 220px;
+  box-shadow: 0 1px 0 rgba(197, 179, 211, 0.25);
+}
+
+.log-title {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--accent2);
+}
+
+.log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.log-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--line);
+  border-radius: 2px;
+  background: rgba(197, 179, 211, 0.08);
+}
+
+.log-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex: none;
+}
+
+.log-item--alert {
+  border-left-color: var(--alert);
+  background: rgba(226, 72, 63, 0.08);
+  color: var(--alert);
+}
+
+.log-item--alert .log-dot {
+  background: var(--alert);
+}
+
+.log-list:empty::before {
+  content: "No detections yet.";
+  color: var(--muted);
+  font-size: 12.5px;
+}
