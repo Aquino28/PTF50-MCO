@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CCS Lab Equipment Watch</title>
+  <title>CCS Lab Guardian</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -12,55 +12,163 @@
 <body>
 
   <header class="topbar">
-    <h1 class="wordmark">CCS Lab<br>Watch</h1>
-    <p id="status" class="status-line">Loading model…</p>
+    <div class="brand">
+      <div class="shield">✦</div>
+      <div>
+        <h1 class="wordmark">CCS Lab Guardian</h1>
+        <p class="tagline">AI-powered unattended item monitoring</p>
+      </div>
+    </div>
+    <div class="system-status">
+      <span id="statusDot" class="status-dot"></span>
+      <span id="status">Loading AI model…</span>
+    </div>
   </header>
 
-  <!-- Mode selection -->
-  <div class="mode-switch">
-    <button id="uploadModeBtn" class="mode-btn is-active">Upload Photo</button>
-    <button id="webcamModeBtn" class="mode-btn">Use Webcam</button>
-  </div>
+  <main class="dashboard">
 
-  <!-- Upload mode controls (hidden until chosen) -->
-  <div id="uploadControls" class="controls" style="display:none;">
-    <label class="file-btn">
-      Choose photo
-      <input type="file" id="fileInput" accept="image/*">
-    </label>
-  </div>
+    <section class="hero">
+      <div>
+        <p class="eyebrow">AUF • COLLEGE OF COMPUTER STUDIES</p>
+        <h2>Smart laboratory monitoring</h2>
+        <p class="hero-copy">
+          Detect common objects, observe changes in the scene, and flag items
+          that remain visible after a person leaves the frame.
+        </p>
+      </div>
+      <div class="model-badge">
+        <span>MODEL</span>
+        <strong>COCO-SSD</strong>
+        <small>Pre-trained object detection</small>
+      </div>
+    </section>
 
-  <!-- Webcam mode controls (hidden until chosen) -->
-  <div id="webcamControls" class="controls" style="display:none;">
-    <button id="startWebcamBtn" class="action-btn">Start Webcam</button>
-    <button id="stopWebcamBtn" class="action-btn action-btn--stop" style="display:none;">Stop Webcam</button>
-  </div>
+    <section class="toolbar">
+      <div class="mode-switch">
+        <button id="uploadModeBtn" class="mode-btn is-active">📷 Upload Photo</button>
+        <button id="webcamModeBtn" class="mode-btn">◉ Live Webcam</button>
+      </div>
 
-  <main class="console">
-    <!-- One shared display area. Only one of img/video is visible at a time,
-         the canvas always sits on top of whichever is active. -->
-    <div id="stageWrapper" class="stage">
-      <span class="bracket bracket--tl"></span>
-      <span class="bracket bracket--tr"></span>
-      <span class="bracket bracket--bl"></span>
-      <span class="bracket bracket--br"></span>
-      <img id="labPhoto" class="stage-media">
-      <video id="webcamFeed" class="stage-media" autoplay muted playsinline></video>
-      <canvas id="overlay" class="stage-overlay"></canvas>
-    </div>
+      <div id="uploadControls" class="controls">
+        <label class="file-btn">
+          Choose laboratory photo
+          <input type="file" id="fileInput" accept="image/*">
+        </label>
+      </div>
 
-    <aside class="log">
-      <h2 class="log-title">Detections</h2>
-      <ul id="results" class="log-list"></ul>
-    </aside>
+      <div id="webcamControls" class="controls" style="display:none;">
+        <button id="startWebcamBtn" class="action-btn">Start Camera</button>
+        <button id="stopWebcamBtn" class="action-btn action-btn--stop" style="display:none;">Stop Camera</button>
+      </div>
+    </section>
+
+    <section class="stats-grid">
+      <article class="stat-card">
+        <span class="stat-icon">👤</span>
+        <div><span>People</span><strong id="peopleCount">0</strong></div>
+      </article>
+      <article class="stat-card">
+        <span class="stat-icon">📦</span>
+        <div><span>Objects</span><strong id="objectCount">0</strong></div>
+      </article>
+      <article class="stat-card stat-card--warning">
+        <span class="stat-icon">⚠️</span>
+        <div><span>Watch Alerts</span><strong id="alertCount">0</strong></div>
+      </article>
+      <article class="stat-card">
+        <span class="stat-icon">⏱️</span>
+        <div><span>Longest Unattended</span><strong id="longestTimer">00:00</strong></div>
+      </article>
+    </section>
+
+    <section class="main-grid">
+      <div class="camera-card">
+        <div class="card-heading">
+          <div>
+            <span class="eyebrow">VISION FEED</span>
+            <h3>Detection Area</h3>
+          </div>
+          <span id="sceneBadge" class="scene-badge">WAITING</span>
+        </div>
+
+        <div id="stageWrapper" class="stage">
+          <span class="bracket bracket--tl"></span>
+          <span class="bracket bracket--tr"></span>
+          <span class="bracket bracket--bl"></span>
+          <span class="bracket bracket--br"></span>
+          <div id="emptyState" class="empty-state">
+            <div class="empty-icon">◌</div>
+            <strong>Waiting for a visual source</strong>
+            <span>Upload a photo or start the webcam to begin detection.</span>
+          </div>
+          <img id="labPhoto" class="stage-media" alt="Uploaded laboratory" />
+          <video id="webcamFeed" class="stage-media" autoplay muted playsinline></video>
+          <canvas id="overlay" class="stage-overlay"></canvas>
+        </div>
+      </div>
+
+      <aside class="side-stack">
+        <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <span class="eyebrow">CURRENT SCENE</span>
+              <h3>Lab Status</h3>
+            </div>
+          </div>
+          <div id="labStatus" class="lab-status">
+            <span class="big-status-dot"></span>
+            <div>
+              <strong id="labStatusTitle">Waiting</strong>
+              <span id="labStatusText">No scene is being analyzed.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <span class="eyebrow">MONITORED ITEMS</span>
+              <h3>Live Detections</h3>
+            </div>
+          </div>
+          <ul id="results" class="results-list"></ul>
+          <div id="noResults" class="no-results">No objects detected yet.</div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="lower-grid">
+      <div class="panel">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">UNATTENDED MONITOR</span>
+            <h3>Items being watched</h3>
+          </div>
+          <button id="clearHistoryBtn" class="small-btn">Clear history</button>
+        </div>
+        <div id="watchList" class="watch-list">
+          <div class="empty-watch">No unattended items are currently being tracked.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">ACTIVITY</span>
+            <h3>Recent alerts</h3>
+          </div>
+        </div>
+        <ul id="activityList" class="activity-list">
+          <li class="activity-empty">Detection activity will appear here.</li>
+        </ul>
+      </div>
+    </section>
+
+
   </main>
 
-  <!-- Libraries -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
-
-  <!-- Our own logic, kept separate -->
   <script src="app.js"></script>
-
 </body>
 </html>

@@ -1,7 +1,10 @@
-// ===== SETUP: grab all the elements we'll need, once =====
+// ============================================================
+// CCS LAB GUARDIAN
+// COCO-SSD + scene persistence + unattended-item timer
+// ============================================================
 
 const statusEl = document.getElementById("status");
-const resultsList = document.getElementById("results");
+const statusDot = document.getElementById("statusDot");
 
 const uploadModeBtn = document.getElementById("uploadModeBtn");
 const webcamModeBtn = document.getElementById("webcamModeBtn");
@@ -16,180 +19,514 @@ const videoEl = document.getElementById("webcamFeed");
 const canvas = document.getElementById("overlay");
 const ctx = canvas.getContext("2d");
 const stageWrapper = document.getElementById("stageWrapper");
+const emptyState = document.getElementById("emptyState");
 
-// The items we're treating as "school/lab equipment" — see the limitation
-// discussion: COCO-SSD only knows these 80 classes, nothing more specific
-// like "pen" or "flash drive" exists in its vocabulary. Picked the classes
-// that plausibly show up as CCS lab equipment: "tv" doubles as a monitor,
-// "remote" for lab TVs/projectors, plus the usual laptop/keyboard/mouse/
-// backpack/book/phone/scissors/cup/bottle items.
+const peopleCountEl = document.getElementById("peopleCount");
+const objectCountEl = document.getElementById("objectCount");
+const alertCountEl = document.getElementById("alertCount");
+const longestTimerEl = document.getElementById("longestTimer");
+
+const sceneBadge = document.getElementById("sceneBadge");
+const labStatusTitle = document.getElementById("labStatusTitle");
+const labStatusText = document.getElementById("labStatusText");
+
+const resultsList = document.getElementById("results");
+const noResults = document.getElementById("noResults");
+const watchList = document.getElementById("watchList");
+const activityList = document.getElementById("activityList");
+const clearHistoryBtn = document.getElementById("clearHistoryBtn");
+
+// These are COCO-SSD classes that make sense for a CCS laboratory.
+// The model itself still only knows its original pre-trained vocabulary.
 const WATCHED_ITEMS = [
   "backpack", "book", "laptop", "cell phone",
   "keyboard", "mouse", "remote", "tv",
   "scissors", "cup", "bottle"
 ];
 
+// A detection must persist for several frames before it is treated as a
+// real tracked object. This helps reduce one-frame false positives.
+const MIN_TRACK_SCORE = 0.55;
+const REQUIRED_PERSISTENCE = 3;
+const ALERT_AFTER_MS = 30000;
+
 let model = null;
 let webcamLoopRunning = false;
+let webcamBusy = false;
 
-// ===== LOAD THE MODEL ONCE, AS SOON AS THE PAGE OPENS =====
+let trackedItems = new Map();
+let activity = [];
+let totalAlerts = 0;
+
+// ===== INITIALIZATION =====
 
 async function init() {
-  model = await cocoSsd.load();
-  statusEl.innerText = "Model loaded. Choose Upload Photo or Use Webcam.";
+  try {
+    setStatus("Loading AI model…", "loading");
+    model = await cocoSsd.load();
+    setStatus("AI model ready. Choose a detection mode.", "ok");
+    addActivity("System", "COCO-SSD model loaded successfully.");
+  } catch (error) {
+    console.error(error);
+    setStatus("Unable to load AI model.", "alert");
+    addActivity("System", "Model loading failed.");
+  }
 }
 
 init();
 
-// ===== MODE SWITCHING =====
-// Clicking a mode button just shows/hides the right controls and stage element.
-// It does NOT run detection by itself — that happens after an image loads
-// or the webcam starts.
+// ===== UI HELPERS =====
 
-uploadModeBtn.addEventListener("click", function () {
+function setStatus(message, type) {
+  statusEl.textContent = message;
+  statusDot.className = "status-dot";
+  if (type === "ok") statusDot.classList.add("ok");
+  if (type === "alert") statusDot.classList.add("alert");
+}
+
+function formatTime(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
+  const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
+function nowLabel() {
+  return new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function addActivity(objectName, message) {
+  activity.unshift({
+    time: nowLabel(),
+    objectName,
+    message
+  });
+
+  activity = activity.slice(0, 12);
+  renderActivity();
+}
+
+function renderActivity() {
+  activityList.innerHTML = "";
+
+  if (!activity.length) {
+    activityList.innerHTML = '<li class="activity-empty">Detection activity will appear here.</li>';
+    return;
+  }
+
+  activity.forEach(item => {
+    const li = document.createElement("li");
+    li.className = "activity-item";
+    li.innerHTML =
+      `<span class="activity-time">${item.time}</span>` +
+      `<strong>${escapeHtml(item.objectName)}</strong> ` +
+      `${escapeHtml(item.message)}`;
+    activityList.appendChild(li);
+  });
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+// ===== MODE SWITCHING =====
+
+uploadModeBtn.addEventListener("click", () => {
   stopWebcamIfRunning();
+
   uploadModeBtn.classList.add("is-active");
   webcamModeBtn.classList.remove("is-active");
-  uploadControls.style.display = "block";
+
+  uploadControls.style.display = "flex";
   webcamControls.style.display = "none";
+
   videoEl.style.display = "none";
-  imgEl.style.display = "none"; // stays hidden until a file is actually chosen
+  imgEl.style.display = "none";
+  emptyState.style.display = "flex";
+
+  clearVisualState();
+  setStatus("Choose a laboratory photo.", "loading");
 });
 
-webcamModeBtn.addEventListener("click", function () {
+webcamModeBtn.addEventListener("click", () => {
+  stopWebcamIfRunning();
+
   webcamModeBtn.classList.add("is-active");
   uploadModeBtn.classList.remove("is-active");
+
   uploadControls.style.display = "none";
-  webcamControls.style.display = "block";
+  webcamControls.style.display = "flex";
   startWebcamBtn.style.display = "inline-block";
   stopWebcamBtn.style.display = "none";
+
   imgEl.style.display = "none";
+  emptyState.style.display = "flex";
+
+  clearVisualState();
+  setStatus("Ready to start the webcam.", "loading");
 });
 
 // ===== UPLOAD MODE =====
 
-fileInput.addEventListener("change", function (event) {
+fileInput.addEventListener("change", event => {
   const file = event.target.files[0];
-  if (!file) return;
+  if (!file || !model) return;
 
-  // FileReader lets us read a local file the user picked and turn it
-  // into a data URL string the <img> tag can display as its src.
   const reader = new FileReader();
-  reader.onload = function (e) {
-    imgEl.src = e.target.result;
+
+  reader.onload = eventResult => {
+    imgEl.src = eventResult.target.result;
   };
+
   reader.readAsDataURL(file);
 
-  // Once the image has actually finished loading its pixels, run detection.
-  // We only want to detect AFTER the image is visible and sized correctly.
-  imgEl.onload = async function () {
+  imgEl.onload = async () => {
     imgEl.style.display = "block";
     videoEl.style.display = "none";
+    emptyState.style.display = "none";
+    stageWrapper.classList.remove("is-live");
+
+    resetTracking();
+    setStatus("Analyzing uploaded photo…", "loading");
+
     await detectOnce(imgEl);
   };
 });
 
 // ===== WEBCAM MODE =====
 
-startWebcamBtn.addEventListener("click", async function () {
-  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-  videoEl.srcObject = stream;
-  videoEl.style.display = "block";
-  imgEl.style.display = "none";
-  startWebcamBtn.style.display = "none";
-  stopWebcamBtn.style.display = "inline-block";
-  stageWrapper.classList.add("is-live");
+startWebcamBtn.addEventListener("click", async () => {
+  if (!model) return;
 
-  videoEl.onloadeddata = function () {
-    webcamLoopRunning = true;
-    detectLoop();
-  };
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+      audio: false
+    });
+
+    videoEl.srcObject = stream;
+    videoEl.style.display = "block";
+    imgEl.style.display = "none";
+    emptyState.style.display = "none";
+
+    startWebcamBtn.style.display = "none";
+    stopWebcamBtn.style.display = "inline-block";
+
+    stageWrapper.classList.add("is-live");
+
+    resetTracking();
+    setStatus("Live monitoring active.", "ok");
+
+    videoEl.onloadeddata = () => {
+      webcamLoopRunning = true;
+      detectLoop();
+    };
+  } catch (error) {
+    console.error(error);
+    setStatus("Camera access was not available.", "alert");
+    addActivity("Camera", "Permission or device error.");
+  }
 });
 
-stopWebcamBtn.addEventListener("click", function () {
+stopWebcamBtn.addEventListener("click", () => {
   stopWebcamIfRunning();
+
   startWebcamBtn.style.display = "inline-block";
   stopWebcamBtn.style.display = "none";
 
-  // Clear the last frame's overlay/results so a stale detection
-  // doesn't stay on screen after the feed is gone.
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  resultsList.innerHTML = "";
-  statusEl.innerText = "Webcam stopped.";
-  statusEl.classList.remove("status-line--ok", "status-line--alert");
+  clearVisualState();
+  setStatus("Webcam stopped.", "loading");
 });
 
 function stopWebcamIfRunning() {
   webcamLoopRunning = false;
+  webcamBusy = false;
   stageWrapper.classList.remove("is-live");
+
   if (videoEl.srcObject) {
-    videoEl.srcObject.getTracks().forEach(function (track) { track.stop(); });
+    videoEl.srcObject.getTracks().forEach(track => track.stop());
     videoEl.srcObject = null;
   }
 }
 
-// ===== SHARED DETECTION LOGIC =====
-// Both modes end up calling this. It runs the model once on whatever
-// source (an <img> or a <video> frame) and draws the results.
+// ===== DETECTION =====
 
 async function detectOnce(sourceElement) {
-  const predictions = await model.detect(sourceElement);
-  renderPredictions(predictions, sourceElement);
+  try {
+    const predictions = await model.detect(sourceElement);
+    renderPredictions(predictions, sourceElement, false);
+  } catch (error) {
+    console.error(error);
+    setStatus("Detection error. Please try again.", "alert");
+  }
 }
 
-// The webcam needs to detect over and over, frame after frame, since the
-// scene keeps changing live. requestAnimationFrame asks the browser to
-// call this function again right before its next repaint — effectively
-// creating a smooth loop synced to the browser's own refresh rate.
 async function detectLoop() {
-  if (!webcamLoopRunning) return;
+  if (!webcamLoopRunning || webcamBusy) return;
 
-  const predictions = await model.detect(videoEl);
-  renderPredictions(predictions, videoEl);
+  webcamBusy = true;
 
-  requestAnimationFrame(detectLoop);
+  try {
+    const predictions = await model.detect(videoEl);
+    renderPredictions(predictions, videoEl, true);
+  } catch (error) {
+    console.error(error);
+  } finally {
+    webcamBusy = false;
+  }
+
+  if (webcamLoopRunning) requestAnimationFrame(detectLoop);
 }
 
-// ===== DRAWING + "LEFT BEHIND" LOGIC =====
+// ===== RENDERING =====
 
-function renderPredictions(predictions, sourceElement) {
-  // Size the canvas to match whichever source is currently active.
-  canvas.width = sourceElement.videoWidth || sourceElement.width;
-  canvas.height = sourceElement.videoHeight || sourceElement.height;
+function renderPredictions(predictions, sourceElement, isLive) {
+  canvas.width = sourceElement.videoWidth || sourceElement.naturalWidth || sourceElement.width;
+  canvas.height = sourceElement.videoHeight || sourceElement.naturalHeight || sourceElement.height;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  resultsList.innerHTML = "";
 
-  const personPresent = predictions.some(function (p) { return p.class === "person"; });
+  const visible = predictions.filter(p => p.score >= MIN_TRACK_SCORE);
+  const people = visible.filter(p => p.class === "person");
+  const watched = visible.filter(p => WATCHED_ITEMS.includes(p.class));
 
-  predictions.forEach(function (item) {
+  peopleCountEl.textContent = people.length;
+  objectCountEl.textContent = visible.length;
+
+  updateTrackedItems(watched, people.length, isLive);
+  drawPredictions(visible);
+  renderResults(visible);
+  renderWatchList();
+  updateDashboardStatus(people.length, watched.length);
+}
+
+function drawPredictions(predictions) {
+  predictions.forEach(item => {
     const [x, y, width, height] = item.bbox;
-    const isWatchedItem = WATCHED_ITEMS.includes(item.class);
-    const isLeftBehind = isWatchedItem && !personPresent;
+    const tracked = trackedItems.get(item.class);
+    const isAlert = tracked && tracked.alerted;
 
-    // Cyan-ish "ok" box for normal detections, alert-red box for a flagged item —
-    // same palette as the rest of the UI (see style.css --ok / --alert).
-    ctx.strokeStyle = isLeftBehind ? "#ff5d4b" : "#45d483";
+    ctx.strokeStyle = isAlert ? "#df6b71" : "#3c9b6e";
     ctx.lineWidth = 3;
     ctx.strokeRect(x, y, width, height);
 
-    const label = item.class + " " + Math.round(item.score * 100) + "%" + (isLeftBehind ? " — LEFT BEHIND?" : "");
-    ctx.font = "14px 'JetBrains Mono', monospace";
+    const label =
+      `${item.class} ${Math.round(item.score * 100)}%` +
+      (isAlert ? " • POSSIBLY UNATTENDED" : "");
+
+    ctx.font = "12px 'JetBrains Mono', monospace";
     const textWidth = ctx.measureText(label).width;
-    ctx.fillStyle = isLeftBehind ? "#ff5d4b" : "#45d483";
-    ctx.fillRect(x, y - 20, textWidth + 8, 20);
-    ctx.fillStyle = "#0a1316";
-    ctx.fillText(label, x + 4, y - 5);
+
+    ctx.fillStyle = isAlert ? "#df6b71" : "#3c9b6e";
+    ctx.fillRect(x, Math.max(0, y - 21), textWidth + 10, 21);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(label, x + 5, Math.max(14, y - 6));
+  });
+}
+
+function renderResults(predictions) {
+  resultsList.innerHTML = "";
+
+  if (!predictions.length) {
+    noResults.style.display = "block";
+    return;
+  }
+
+  noResults.style.display = "none";
+
+  predictions.forEach(item => {
+    const tracked = trackedItems.get(item.class);
+    const isAlert = tracked && tracked.alerted;
 
     const li = document.createElement("li");
-    li.className = "log-item" + (isLeftBehind ? " log-item--alert" : "");
-    li.innerHTML = '<span class="log-dot"></span><span>' + label + '</span>';
+    li.className = "result-item" + (isAlert ? " alert" : "");
+
+    const status = isAlert ? "⚠ WATCHING" : "● DETECTED";
+
+    li.innerHTML =
+      `<span class="result-name">${escapeHtml(item.class)} — ${status}</span>` +
+      `<span class="result-confidence">${Math.round(item.score * 100)}%</span>`;
+
     resultsList.appendChild(li);
   });
-
-  statusEl.innerText = personPresent
-    ? "Person present in frame."
-    : "No person detected — any watched item above is flagged as possibly left behind.";
-  statusEl.classList.toggle("status-line--ok", personPresent);
-  statusEl.classList.toggle("status-line--alert", !personPresent);
 }
+
+// ===== PERSISTENCE / UNATTENDED LOGIC =====
+
+function updateTrackedItems(watched, peopleCount, isLive) {
+  const now = Date.now();
+  const currentClasses = new Set(watched.map(item => item.class));
+
+  watched.forEach(item => {
+    const existing = trackedItems.get(item.class);
+
+    if (!existing) {
+      trackedItems.set(item.class, {
+        label: item.class,
+        firstSeen: now,
+        lastSeen: now,
+        persistence: 1,
+        alerted: false,
+        lastScore: item.score
+      });
+      return;
+    }
+
+    existing.lastSeen = now;
+    existing.persistence += 1;
+    existing.lastScore = item.score;
+
+    // For a live feed, a watched object becomes "possibly unattended"
+    // only after it has persisted across several frames while no person
+    // is detected.
+    if (
+      isLive &&
+      peopleCount === 0 &&
+      existing.persistence >= REQUIRED_PERSISTENCE &&
+      now - existing.firstSeen >= ALERT_AFTER_MS &&
+      !existing.alerted
+    ) {
+      existing.alerted = true;
+      totalAlerts += 1;
+      alertCountEl.textContent = totalAlerts;
+      addActivity(item.class, "has remained visible without a detected person.");
+    }
+
+    // If a person returns, resume normal monitoring.
+    if (peopleCount > 0 && existing.alerted) {
+      existing.alerted = false;
+      existing.firstSeen = now;
+      addActivity(item.class, "person detected again; alert cleared.");
+    }
+  });
+
+  // Remove objects that disappeared from the scene.
+  [...trackedItems.entries()].forEach(([label, item]) => {
+    if (!currentClasses.has(label) && now - item.lastSeen > 1800) {
+      if (item.alerted) {
+        addActivity(label, "is no longer visible; monitoring ended.");
+      }
+      trackedItems.delete(label);
+    }
+  });
+}
+
+function renderWatchList() {
+  const items = [...trackedItems.values()].filter(item => item.alerted);
+
+  if (!items.length) {
+    watchList.innerHTML =
+      '<div class="empty-watch">No unattended items are currently being tracked.</div>';
+    longestTimerEl.textContent = "00:00";
+    return;
+  }
+
+  const now = Date.now();
+  let longest = 0;
+
+  watchList.innerHTML = "";
+
+  items.forEach(item => {
+    const elapsed = now - item.firstSeen;
+    longest = Math.max(longest, elapsed);
+
+    const card = document.createElement("div");
+    card.className = "watch-card";
+
+    card.innerHTML = `
+      <div class="watch-main">
+        <strong>⚠️ ${escapeHtml(item.label)}</strong>
+        <span>Possibly unattended • ${Math.round(item.lastScore * 100)}% confidence</span>
+      </div>
+      <div class="timer">${formatTime(elapsed)}</div>
+    `;
+
+    watchList.appendChild(card);
+  });
+
+  longestTimerEl.textContent = formatTime(longest);
+}
+
+// Update timers even when the detection frame itself isn't changing.
+setInterval(() => {
+  renderWatchList();
+}, 500);
+
+// ===== DASHBOARD STATUS =====
+
+function updateDashboardStatus(peopleCount, watchedCount) {
+  const alerts = [...trackedItems.values()].filter(item => item.alerted).length;
+
+  if (alerts > 0) {
+    sceneBadge.textContent = "ATTENTION";
+    sceneBadge.className = "scene-badge alert";
+
+    labStatusTitle.textContent = "Attention required";
+    labStatusText.textContent = `${alerts} item${alerts > 1 ? "s" : ""} may be unattended.`;
+
+    setStatus("Possible unattended item detected.", "alert");
+  } else if (peopleCount > 0) {
+    sceneBadge.textContent = "MONITORING";
+    sceneBadge.className = "scene-badge ok";
+
+    labStatusTitle.textContent = "Normal monitoring";
+    labStatusText.textContent = `${peopleCount} person${peopleCount > 1 ? "s" : ""} detected in the scene.`;
+
+    setStatus("Live monitoring active.", "ok");
+  } else if (watchedCount > 0) {
+    sceneBadge.textContent = "CHECKING";
+    sceneBadge.className = "scene-badge";
+
+    labStatusTitle.textContent = "Checking scene";
+    labStatusText.textContent = "Objects detected; no person is currently visible.";
+
+    setStatus("Checking detected items.", "loading");
+  } else {
+    sceneBadge.textContent = "CLEAR";
+    sceneBadge.className = "scene-badge ok";
+
+    labStatusTitle.textContent = "No monitored objects";
+    labStatusText.textContent = "No watched items are currently visible.";
+
+    setStatus("Scene analyzed.", "ok");
+  }
+}
+
+// ===== RESET / CLEAR =====
+
+function resetTracking() {
+  trackedItems.clear();
+  totalAlerts = 0;
+  alertCountEl.textContent = "0";
+  longestTimerEl.textContent = "00:00";
+  renderWatchList();
+}
+
+function clearVisualState() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  resultsList.innerHTML = "";
+  noResults.style.display = "block";
+  peopleCountEl.textContent = "0";
+  objectCountEl.textContent = "0";
+  resetTracking();
+
+  sceneBadge.textContent = "WAITING";
+  sceneBadge.className = "scene-badge";
+  labStatusTitle.textContent = "Waiting";
+  labStatusText.textContent = "No scene is being analyzed.";
+}
+
+clearHistoryBtn.addEventListener("click", () => {
+  activity = [];
+  renderActivity();
+  addActivity("System", "Activity history cleared.");
+});
