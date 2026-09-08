@@ -6,18 +6,15 @@
 const statusEl = document.getElementById("status");
 const statusDot = document.getElementById("statusDot");
 
-const uploadModeBtn = document.getElementById("uploadModeBtn");
 const webcamModeBtn = document.getElementById("webcamModeBtn");
-const uploadControls = document.getElementById("uploadControls");
 const webcamControls = document.getElementById("webcamControls");
-const fileInput = document.getElementById("fileInput");
 const startWebcamBtn = document.getElementById("startWebcamBtn");
 const stopWebcamBtn = document.getElementById("stopWebcamBtn");
 
-const imgEl = document.getElementById("labPhoto");
 const videoEl = document.getElementById("webcamFeed");
 const canvas = document.getElementById("overlay");
 const ctx = canvas.getContext("2d");
+
 const stageWrapper = document.getElementById("stageWrapper");
 const emptyState = document.getElementById("emptyState");
 
@@ -63,13 +60,23 @@ let totalAlerts = 0;
 async function init() {
   try {
     setStatus("Loading AI model…", "loading");
+
     model = await cocoSsd.load();
-    setStatus("AI model ready. Choose a detection mode.", "ok");
-    addActivity("System", "COCO-SSD model loaded successfully.");
+
+    webcamModeBtn.classList.add("is-active");
+    webcamControls.style.display = "flex";
+
+    setStatus(
+      "AI model ready. Start the webcam to begin monitoring.","ok");
+
+    addActivity("System","COCO-SSD model loaded successfully.");
+
   } catch (error) {
-    console.error(error);
-    setStatus("Unable to load AI model.", "alert");
-    addActivity("System", "Model loading failed.");
+    console.error("Model loading error:", error);
+
+    setStatus( "Unable to load AI model.","alert");
+
+    addActivity("System","Model loading failed.");
   }
 }
 
@@ -137,84 +144,27 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-// ===== MODE SWITCHING =====
-
-uploadModeBtn.addEventListener("click", () => {
-  stopWebcamIfRunning();
-
-  uploadModeBtn.classList.add("is-active");
-  webcamModeBtn.classList.remove("is-active");
-
-  uploadControls.style.display = "flex";
-  webcamControls.style.display = "none";
-
-  videoEl.style.display = "none";
-  imgEl.style.display = "none";
-  emptyState.style.display = "flex";
-
-  clearVisualState();
-  setStatus("Choose a laboratory photo.", "loading");
-});
-
-webcamModeBtn.addEventListener("click", () => {
-  stopWebcamIfRunning();
-
-  webcamModeBtn.classList.add("is-active");
-  uploadModeBtn.classList.remove("is-active");
-
-  uploadControls.style.display = "none";
-  webcamControls.style.display = "flex";
-  startWebcamBtn.style.display = "inline-block";
-  stopWebcamBtn.style.display = "none";
-
-  imgEl.style.display = "none";
-  emptyState.style.display = "flex";
-
-  clearVisualState();
-  setStatus("Ready to start the webcam.", "loading");
-});
-
-// ===== UPLOAD MODE =====
-
-fileInput.addEventListener("change", event => {
-  const file = event.target.files[0];
-  if (!file || !model) return;
-
-  const reader = new FileReader();
-
-  reader.onload = eventResult => {
-    imgEl.src = eventResult.target.result;
-  };
-
-  reader.readAsDataURL(file);
-
-  imgEl.onload = async () => {
-    imgEl.style.display = "block";
-    videoEl.style.display = "none";
-    emptyState.style.display = "none";
-    stageWrapper.classList.remove("is-live");
-
-    resetTracking();
-    setStatus("Analyzing uploaded photo…", "loading");
-
-    await detectOnce(imgEl);
-  };
-});
-
 // ===== WEBCAM MODE =====
 
 startWebcamBtn.addEventListener("click", async () => {
-  if (!model) return;
+  if (!model) {
+    setStatus("AI model is still loading.", "loading");
+    return;
+  }
 
   try {
+    setStatus("Starting camera…", "loading");
+
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment" },
+      video: {
+        facingMode: "environment"
+      },
       audio: false
     });
 
     videoEl.srcObject = stream;
+
     videoEl.style.display = "block";
-    imgEl.style.display = "none";
     emptyState.style.display = "none";
 
     startWebcamBtn.style.display = "none";
@@ -223,18 +173,37 @@ startWebcamBtn.addEventListener("click", async () => {
     stageWrapper.classList.add("is-live");
 
     resetTracking();
+
+    // Make sure the video starts playing.
+    await videoEl.play();
+
     setStatus("Live monitoring active.", "ok");
 
-    videoEl.onloadeddata = () => {
-      webcamLoopRunning = true;
-      detectLoop();
-    };
+    addActivity(
+      "Camera",
+      "Live laboratory monitoring started."
+    );
+
+    webcamLoopRunning = true;
+    webcamBusy = false;
+
+    detectLoop();
+
   } catch (error) {
-    console.error(error);
-    setStatus("Camera access was not available.", "alert");
-    addActivity("Camera", "Permission or device error.");
+    console.error("Camera error:", error);
+
+    setStatus(
+      "Camera access was not available.",
+      "alert"
+    );
+
+    addActivity(
+      "Camera",
+      "Permission or device error."
+    );
   }
 });
+
 
 stopWebcamBtn.addEventListener("click", () => {
   stopWebcamIfRunning();
@@ -243,18 +212,34 @@ stopWebcamBtn.addEventListener("click", () => {
   stopWebcamBtn.style.display = "none";
 
   clearVisualState();
-  setStatus("Webcam stopped.", "loading");
+
+  setStatus(
+    "Webcam stopped.",
+    "loading"
+  );
+
+  addActivity(
+    "Camera",
+    "Live laboratory monitoring stopped."
+  );
 });
+
 
 function stopWebcamIfRunning() {
   webcamLoopRunning = false;
   webcamBusy = false;
+
   stageWrapper.classList.remove("is-live");
 
   if (videoEl.srcObject) {
-    videoEl.srcObject.getTracks().forEach(track => track.stop());
+    videoEl.srcObject
+      .getTracks()
+      .forEach(track => track.stop());
+
     videoEl.srcObject = null;
   }
+
+  videoEl.pause();
 }
 
 // ===== DETECTION =====
